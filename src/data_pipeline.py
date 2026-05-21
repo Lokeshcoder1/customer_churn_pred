@@ -46,6 +46,9 @@ class DataPipeline:
         df=df.copy()
         logger.info("Starting data cleaning..")
 
+        #Drop features to drop(CustomerID)
+        df = df.drop(columns=FEATURES_TO_DROP, errors='ignore')
+
         #Type conversions
         if "TotalCharges" in df.columns:
             df["TotalCharges"]=pd.to_numeric(df["TotalCharges"],errors="coerce")

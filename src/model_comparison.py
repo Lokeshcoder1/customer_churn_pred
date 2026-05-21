@@ -160,11 +160,11 @@ class ModelComparison:
                     "model": pipeline
                 }
 
-                print(f"✓ ({elapsed:.1f}s)")
+                print(f"[ok] ({elapsed:.1f}s)")
                 logger.info(f"{model_name}: AUC={auc:.4f}, Precision={precision:.4f}, Recall={recall:.4f}, F1={f1:.4f}")
 
             except Exception as e:
-                print(f"✗ Error: {str(e)}")
+                print(f" Error: {str(e)}")
                 logger.error(f"Error training {model_name}: {str(e)}")
                 continue
 
@@ -444,10 +444,10 @@ class ModelComparison:
         report += f"F1 Score: {best_result['f1']:.4f}\n\n"
 
         report += "Reasoning:\n"
-        report += f"  ✓ Highest test AUC among all models\n"
-        report += f"  ✓ Good precision-recall balance\n"
-        report += f"  ✓ No overfitting (CV AUC ≈ Test AUC)\n"
-        report += f"  ✓ Production-ready performance\n\n"
+        report += f"  [ok] Highest test AUC among all models\n"
+        report += f"  [ok] Good precision-recall balance\n"
+        report += f"  [ok] No overfitting (CV AUC ≈ Test AUC)\n"
+        report += f"  [ok] Production-ready performance\n\n"
 
         report += "="*90 + "\n"
 
