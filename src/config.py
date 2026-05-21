@@ -41,7 +41,8 @@ CATEGORICAL_FEATURES=[
     "StreamingMovies",
     "Contract",
     "PaperlessBilling",
-    "PaymentMethod"
+    "PaymentMethod",
+    "tenure_group"
 ]
 
 #Features to drop
