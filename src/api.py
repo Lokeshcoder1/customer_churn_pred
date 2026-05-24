@@ -10,8 +10,9 @@ import logging
 from typing import List, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Body, FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from .schemas import (
     ChurnPredictionRequest, ChurnPredictionResponse,
@@ -19,6 +20,7 @@ from .schemas import (
     HealthResponse, ErrorResponse
 )
 from .pipeline import MLPipeline
+from .data_pipeline import DataPipeline
 from .config import API_TITLE, API_DESCRIPTION, API_VERSION, MODEL_ARTIFACT_PATH
 
 # ============================================================================
@@ -34,6 +36,37 @@ logger = logging.getLogger(__name__)
 # Global State
 # ============================================================================
 ml_pipeline = MLPipeline()
+data_pipeline = DataPipeline()
+
+RAW_TO_API_FIELD_MAP = {
+    "tenure": "tenure",
+    "monthlycharges": "monthly_charges",
+    "totalcharges": "total_charges",
+    "contract": "contract",
+    "internetservice": "internet_service",
+    "onlinesecurity": "online_security",
+    "onlinebackup": "online_backup",
+    "deviceprotection": "device_protection",
+    "techsupport": "tech_support",
+    "seniorcitizen": "senior_citizen",
+    "partner": "partner",
+    "dependents": "dependents",
+    "gender": "gender",
+    "phoneservice": "phone_service",
+    "multiplelines": "multiple_lines",
+    "streamingtv": "streaming_tv",
+    "streamingmovies": "streaming_movies",
+    "paperlessbilling": "paperless_billing",
+    "paymentmethod": "payment_method",
+}
+
+def normalize_customer_keys(customer: dict) -> dict:
+    normalized = {}
+    for key, value in customer.items():
+        clean_key = key.replace("_", "").replace(" ", "").lower()
+        normalized_key = RAW_TO_API_FIELD_MAP.get(clean_key, key)
+        normalized[normalized_key] = value
+    return normalized
 
 
 # ============================================================================
@@ -49,6 +82,13 @@ async def lifespan(app: FastAPI):
     # Startup: Load model
     logger.info("Starting up API...")
     try:
+        # load preprocessing artifacts first to align features
+        try:
+            data_pipeline.load_pipeline()
+            logger.info("[ok] Data pipeline artifacts loaded")
+        except Exception:
+            logger.warning("No preprocessing artifacts found or failed to load; continuing")
+
         ml_pipeline.load(MODEL_ARTIFACT_PATH)
         logger.info("[ok] Model loaded successfully")
     except FileNotFoundError:
@@ -156,7 +196,7 @@ async def health_check():
         500: {"description": "Server error", "model": ErrorResponse}
     }
 )
-async def predict_single(request: ChurnPredictionRequest):
+async def predict_single(request: dict = Body(...)):
     """
     Predict churn for a single customer.
 
@@ -183,15 +223,23 @@ async def predict_single(request: ChurnPredictionRequest):
     ```
     """
     try:
-        # Convert request to dict (matches training feature names)
-        features_dict = request.dict()
+        # Normalize raw dataset field names and validate payload
+        features_dict = normalize_customer_keys(request)
+        request_model = ChurnPredictionRequest.model_validate(features_dict)
+        features_dict = request_model.model_dump()
 
-        # Convert to DataFrame format expected by model
+        # Convert to DataFrame
         import pandas as pd
         X = pd.DataFrame([features_dict])
 
+        # Prepare for prediction: map, encode, scale, and align
+        try:
+            X_prepared = data_pipeline.prepare_for_prediction(X)
+        except Exception as e:
+            raise ValueError(f"Preprocessing failed: {e}")
+
         # Get prediction with confidence
-        results = ml_pipeline.predict_with_confidence(X)
+        results = ml_pipeline.predict_with_confidence(X_prepared)
 
         churn_proba = float(results["probabilities"][0])
         churn_pred = bool(results["predictions"][0])
@@ -205,6 +253,12 @@ async def predict_single(request: ChurnPredictionRequest):
             confidence=confidence
         )
 
+    except ValidationError as e:
+        logger.warning(f"Validation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=e.errors()
+        )
     except ValueError as e:
         logger.warning(f"Validation error: {str(e)}")
         raise HTTPException(
@@ -236,7 +290,7 @@ async def predict_single(request: ChurnPredictionRequest):
         500: {"description": "Server error", "model": ErrorResponse}
     }
 )
-async def predict_batch(request: BatchPredictionRequest):
+async def predict_batch(request: dict = Body(...)):
     """
     Predict churn for multiple customers (batch mode).
 
@@ -283,16 +337,26 @@ async def predict_batch(request: BatchPredictionRequest):
     ```
     """
     try:
-        if not request.customers:
+        if "customers" not in request or not request["customers"]:
             raise ValueError("customers list cannot be empty")
 
-        # Convert to DataFrame
+        # Normalize and validate each record
         import pandas as pd
-        features_dicts = [customer.dict() for customer in request.customers]
+        features_dicts = []
+        for customer in request["customers"]:
+            normalized = normalize_customer_keys(customer)
+            request_model = ChurnPredictionRequest.model_validate(normalized)
+            features_dicts.append(request_model.model_dump())
         X = pd.DataFrame(features_dicts)
 
+        # Prepare batch for prediction
+        try:
+            X_prepared = data_pipeline.prepare_for_prediction(X)
+        except Exception as e:
+            raise ValueError(f"Preprocessing failed: {e}")
+
         # Batch prediction
-        results = ml_pipeline.predict_with_confidence(X)
+        results = ml_pipeline.predict_with_confidence(X_prepared)
 
         predictions = [
             ChurnPredictionResponse(
@@ -314,6 +378,12 @@ async def predict_batch(request: BatchPredictionRequest):
             count=len(predictions)
         )
 
+    except ValidationError as e:
+        logger.warning(f"Validation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=e.errors()
+        )
     except ValueError as e:
         logger.warning(f"Validation error: {str(e)}")
         raise HTTPException(

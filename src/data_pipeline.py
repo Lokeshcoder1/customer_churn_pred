@@ -25,6 +25,7 @@ class DataPipeline:
     def __init__(self):
         self.scaler=None
         self.categorical_encoder=None
+        self.feature_columns=None
         logger.info("DatePipeline initialized")
 
     def load_raw(self,filepath:Path)->pd.DataFrame:
@@ -188,6 +189,9 @@ class DataPipeline:
         x_train=self.scale_numeric(x_train,fit=True)#fit scaler on training data
         x_test=self.scale_numeric(x_test,fit=False)#Apply to test data(if you fit :data leakage)
 
+        # Persist canonical feature column order for inference
+        self.feature_columns = x_train.columns.tolist()
+
         if save: #save processed Data
             train_df=x_train.copy()
             train_df[TARGET_COLUMN]=y_train
@@ -212,6 +216,9 @@ class DataPipeline:
             "scaler": self.scaler,
             "categorical_encoder": self.categorical_encoder
         }
+        # include feature column ordering when available
+        if getattr(self, "feature_columns", None) is not None:
+            artifacts["feature_columns"] = self.feature_columns
         joblib.dump(artifacts, filepath)
         logger.info(f"Saved pipeline artifacts to {filepath}")
     def load_pipeline(self,filepath:Optional[Path]=None)->None:
@@ -225,6 +232,108 @@ class DataPipeline:
         artifacts=joblib.load(filepath)
         self.scaler=artifacts["scaler"]
         self.categorical_encoder=artifacts["categorical_encoder"]
+        # Load feature columns if available; otherwise try to recover from processed train.csv
+        if "feature_columns" in artifacts:
+            self.feature_columns = artifacts["feature_columns"]
+        else:
+            # fallback: attempt to read processed train.csv
+            train_path = PROCESSED_DATA_DIR / "train.csv"
+            if train_path.exists():
+                try:
+                    df_train = pd.read_csv(train_path)
+                    # remove target column if present
+                    if TARGET_COLUMN in df_train.columns:
+                        df_train = df_train.drop(columns=[TARGET_COLUMN])
+                    self.feature_columns = df_train.columns.tolist()
+                    logger.info("Recovered feature_columns from processed train.csv")
+                except Exception:
+                    logger.warning("Could not recover feature_columns from train.csv")
+
+    def map_api_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Map API (snake_case) field names to raw dataset column names used in training."""
+        mapping = {
+            "tenure": "tenure",
+            "monthly_charges": "MonthlyCharges",
+            "total_charges": "TotalCharges",
+            "contract": "Contract",
+            "internet_service": "InternetService",
+            "online_security": "OnlineSecurity",
+            "online_backup": "OnlineBackup",
+            "device_protection": "DeviceProtection",
+            "tech_support": "TechSupport",
+            "senior_citizen": "SeniorCitizen",
+            "partner": "Partner",
+            "dependents": "Dependents",
+            "gender": "gender",
+            "phone_service": "PhoneService",
+            "streaming_tv": "StreamingTV",
+            "streaming_movies": "StreamingMovies",
+            "paperless_billing": "PaperlessBilling",
+            "payment_method": "PaymentMethod",
+        }
+        # rename only keys present
+        rename_map = {k: v for k, v in mapping.items() if k in df.columns}
+        if rename_map:
+            df = df.rename(columns=rename_map)
+        return df
+
+    def prepare_for_prediction(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Prepare incoming API dataframe for prediction to match training features.
+
+        Steps: map api names -> raw names, feature engineer, encode (fit=False), scale (fit=False),
+        and align columns to saved `feature_columns`.
+        """
+        if not isinstance(df, pd.DataFrame):
+            df = pd.DataFrame([df])
+
+        df = df.copy()
+        df = self.map_api_features(df)
+
+        # Fill missing categorical features with most common value from training if possible
+        if self.categorical_encoder is not None:
+            missing_cats = [c for c in self.categorical_encoder if c not in df.columns]
+            if missing_cats:
+                train_path = PROCESSED_DATA_DIR / "train.csv"
+                train_modes = {}
+                if train_path.exists():
+                    try:
+                        df_train = pd.read_csv(train_path)
+                        for c in missing_cats:
+                            if c in df_train.columns:
+                                mode_val = df_train[c].mode()
+                                train_modes[c] = mode_val[0] if not mode_val.empty else None
+                    except Exception:
+                        pass
+
+                for c in missing_cats:
+                    if c in train_modes and train_modes[c] is not None:
+                        df[c] = train_modes[c]
+                    else:
+                        # sensible default: SeniorCitizen -> 0, else 'No'
+                        df[c] = 0 if c.lower().startswith('senior') or c == 'SeniorCitizen' else 'No'
+
+        # create features consistent with training
+        df = self.create_features(df)
+
+        # encode and scale using fitted artifacts
+        df = self.encode_categorical(df, fit=False)
+        df = self.scale_numeric(df, fit=False)
+
+        if not getattr(self, "feature_columns", None):
+            raise ValueError("feature_columns not available. Run process() to generate or ensure pipeline artifacts include feature_columns")
+
+        # Align columns: add missing with 0, drop extras, and order
+        for col in self.feature_columns:
+            if col not in df.columns:
+                df[col] = 0
+
+        # drop columns that are not in feature_columns
+        extra_cols = [c for c in df.columns if c not in self.feature_columns]
+        if extra_cols:
+            df = df.drop(columns=extra_cols)
+
+        df = df[self.feature_columns]
+        return df
 
 
 

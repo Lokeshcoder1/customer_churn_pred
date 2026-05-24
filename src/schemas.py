@@ -17,6 +17,7 @@ class ChurnPredictionRequest(BaseModel):
     tenure: float = Field(..., gt=0, description="Number of months as customer (must be > 0)")
     monthly_charges: float = Field(..., gt=0, description="Monthly service charges (must be > 0)")
     total_charges: float = Field(..., ge=0, description="Total charges to date (must be >= 0)")
+    multiple_lines: Optional[str] = Field(None, description="Multiple lines service: Yes, No, No phone service")
 
     # Contract features
     contract: str = Field(..., description="Contract type: Month-to-month, One year, Two year")
@@ -118,7 +119,8 @@ class BatchPredictionRequest(BaseModel):
                         "streaming_tv": "No",
                         "streaming_movies": "No",
                         "paperless_billing": "Yes",
-                        "payment_method": "Electronic check"
+"payment_method": "Electronic check",
+                    "multiple_lines": "No"
                     }
                 ]
             }
