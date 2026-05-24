@@ -18,6 +18,7 @@ from .schemas import (
     BatchPredictionRequest, BatchPredictionResponse,
     HealthResponse, ErrorResponse
 )
+from .data_pipeline import DataPipeline
 from .pipeline import MLPipeline
 from .config import API_TITLE, API_DESCRIPTION, API_VERSION, MODEL_ARTIFACT_PATH
 
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 # Global State
 # ============================================================================
 ml_pipeline = MLPipeline()
+data_pipeline = DataPipeline()
 
 
 # ============================================================================
@@ -50,6 +52,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up API...")
     try:
         ml_pipeline.load(MODEL_ARTIFACT_PATH)
+        data_pipeline.load_pipeline()
         logger.info("[ok] Model loaded successfully")
     except FileNotFoundError:
         logger.error("Model artifact not found. Please train a model first.")
@@ -189,6 +192,7 @@ async def predict_single(request: ChurnPredictionRequest):
         # Convert to DataFrame format expected by model
         import pandas as pd
         X = pd.DataFrame([features_dict])
+        X = data_pipeline.prepare_for_prediction(X)
 
         # Get prediction with confidence
         results = ml_pipeline.predict_with_confidence(X)
@@ -290,6 +294,7 @@ async def predict_batch(request: BatchPredictionRequest):
         import pandas as pd
         features_dicts = [customer.dict() for customer in request.customers]
         X = pd.DataFrame(features_dicts)
+        X = data_pipeline.prepare_for_prediction(X)
 
         # Batch prediction
         results = ml_pipeline.predict_with_confidence(X)

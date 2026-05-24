@@ -25,7 +25,60 @@ class DataPipeline:
     def __init__(self):
         self.scaler=None
         self.categorical_encoder=None
+        self.api_to_raw_map = {
+            "monthly_charges": "MonthlyCharges",
+            "total_charges": "TotalCharges",
+            "senior_citizen": "SeniorCitizen",
+            "phone_service": "PhoneService",
+            "multiple_lines": "MultipleLines",
+            "internet_service": "InternetService",
+            "online_security": "OnlineSecurity",
+            "online_backup": "OnlineBackup",
+            "device_protection": "DeviceProtection",
+            "tech_support": "TechSupport",
+            "streaming_tv": "StreamingTV",
+            "streaming_movies": "StreamingMovies",
+            "paperless_billing": "PaperlessBilling",
+            "payment_method": "PaymentMethod",
+            "partner": "Partner",
+            "dependents": "Dependents",
+            "contract": "Contract",
+            "gender": "gender",
+            "tenure": "tenure"
+        }
+        self.feature_columns = None
         logger.info("DatePipeline initialized")
+
+    def map_api_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Rename API snake_case feature names to raw dataset column names."""
+        df = df.copy()
+        rename_map = {
+            api_name: raw_name
+            for api_name, raw_name in self.api_to_raw_map.items()
+            if api_name in df.columns
+        }
+        if rename_map:
+            df = df.rename(columns=rename_map)
+        return df
+
+    def prepare_for_prediction(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Prepare raw API input for model prediction."""
+        if self.scaler is None or self.categorical_encoder is None:
+            raise ValueError("Preprocessing artifacts not loaded. Call load_pipeline() first.")
+
+        df = self.map_api_features(df)
+        df = self.create_features(df)
+        df = self.encode_categorical(df, fit=False)
+        df = self.scale_numeric(df, fit=False)
+        if self.feature_columns is not None:
+            for col in self.feature_columns:
+                if col not in df.columns:
+                    df[col] = 0
+            extra_cols = [c for c in df.columns if c not in self.feature_columns]
+            if extra_cols:
+                df = df.drop(columns=extra_cols)
+            df = df[self.feature_columns]
+        return df
 
     def load_raw(self,filepath:Path)->pd.DataFrame:
         filepath=Path(filepath)
@@ -188,6 +241,8 @@ class DataPipeline:
         x_train=self.scale_numeric(x_train,fit=True)#fit scaler on training data
         x_test=self.scale_numeric(x_test,fit=False)#Apply to test data(if you fit :data leakage)
 
+        self.feature_columns = x_train.columns.tolist()
+
         if save: #save processed Data
             train_df=x_train.copy()
             train_df[TARGET_COLUMN]=y_train
@@ -211,6 +266,7 @@ class DataPipeline:
         artifacts = {
             "scaler": self.scaler,
             "categorical_encoder": self.categorical_encoder
+            ,"feature_columns": self.feature_columns
         }
         joblib.dump(artifacts, filepath)
         logger.info(f"Saved pipeline artifacts to {filepath}")
@@ -225,6 +281,15 @@ class DataPipeline:
         artifacts=joblib.load(filepath)
         self.scaler=artifacts["scaler"]
         self.categorical_encoder=artifacts["categorical_encoder"]
+        self.feature_columns = artifacts.get("feature_columns")
+        if self.feature_columns is None:
+            train_path = PROCESSED_DATA_DIR / "train.csv"
+            if train_path.exists():
+                df = pd.read_csv(train_path)
+                self.feature_columns = [c for c in df.columns if c != TARGET_COLUMN]
+                logger.info(f"Recovered feature columns from processed train.csv: {len(self.feature_columns)} columns")
+            else:
+                logger.warning("feature_columns missing in artifacts and train.csv not found")
 
 
 

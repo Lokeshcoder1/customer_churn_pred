@@ -36,6 +36,10 @@ class ChurnPredictionRequest(BaseModel):
     # Other features
     gender: str = Field(..., description="Gender: Male, Female")
     phone_service: str = Field(..., description="Phone service: Yes, No")
+    multiple_lines: Optional[str] = Field(
+        None,
+        description="Multiple lines: Yes, No, No phone service"
+    )
     streaming_tv: str = Field(..., description="Streaming TV: Yes, No, No internet service")
     streaming_movies: str = Field(..., description="Streaming movies: Yes, No, No internet service")
     paperless_billing: str = Field(..., description="Paperless billing: Yes, No")
@@ -60,6 +64,7 @@ class ChurnPredictionRequest(BaseModel):
                 "dependents": "No",
                 "gender": "Female",
                 "phone_service": "Yes",
+                "multiple_lines": "No",
                 "streaming_tv": "No",
                 "streaming_movies": "No",
                 "paperless_billing": "Yes",
@@ -115,6 +120,7 @@ class BatchPredictionRequest(BaseModel):
                         "dependents": "No",
                         "gender": "Female",
                         "phone_service": "Yes",
+                        "multiple_lines": "No",
                         "streaming_tv": "No",
                         "streaming_movies": "No",
                         "paperless_billing": "Yes",
