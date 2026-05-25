@@ -1,0 +1,53 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]          # Run on every push to main branch
+  pull_request:
+    branches: [ main ]          # Also run on PRs (optional)
+
+jobs:
+  # ---------- TEST JOB ----------
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.10]   # Use the same Python version as your Docker image
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+
+      - name: Run tests with pytest
+        run: |
+          pytest --cov=./ --cov-report=xml   
+
+      - name: Upload coverage to Codecov (optional)
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+  # ---------- DEPLOY JOB ----------
+  deploy:
+    needs: test                # Only run if the 'test' job succeeds
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'   # Only deploy on main branch pushes
+
+    steps:
+      - name: Trigger Render Deploy
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          curl -X POST "$RENDER_DEPLOY_HOOK"

@@ -1,0 +1,45 @@
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Git
+.git/
+.gitignore
+
+# Large data files (if any)
+*.csv
+*.h5
+*.parquet
+*.npz
+
+# Model files – optionally ignore if you download them during build
+# *.pkl
+# *.joblib
+
+# IDE folders
+.vscode/
+.idea/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Docker related
+Dockerfile
+.dockerignore
+
+# Jupyter notebooks
+*.ipynb
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
