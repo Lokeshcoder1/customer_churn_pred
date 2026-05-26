@@ -180,15 +180,24 @@ class MLPipeline:
         summary += "ML PIPELINE SUMMARY\n"
         summary += "=" * 70 + "\n\n"
 
-        summary += "Pipeline Steps:\n"
-        summary += "-" * 70 + "\n"
-        for i, (name, step) in enumerate(self.pipeline.steps, 1):
-            summary += f"{i}. {name}\n"
-            summary += f"   Type: {type(step).__name__}\n"
+        if hasattr(self.pipeline, "steps"):
+            summary += "Pipeline Steps:\n"
+            summary += "-" * 70 + "\n"
+            for i, (name, step) in enumerate(self.pipeline.steps, 1):
+                summary += f"{i}. {name}\n"
+                summary += f"   Type: {type(step).__name__}\n"
 
-            # Add details for specific steps
-            if hasattr(step, "get_params"):
-                params = step.get_params()
+                # Add details for specific steps
+                if hasattr(step, "get_params"):
+                    params = step.get_params()
+                    if params:
+                        summary += f"   Parameters: {len(params)} configured\n"
+        else:
+            summary += "Estimator:\n"
+            summary += "-" * 70 + "\n"
+            summary += f"   Type: {type(self.pipeline).__name__}\n"
+            if hasattr(self.pipeline, "get_params"):
+                params = self.pipeline.get_params()
                 if params:
                     summary += f"   Parameters: {len(params)} configured\n"
 

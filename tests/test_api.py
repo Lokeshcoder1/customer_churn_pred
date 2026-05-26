@@ -8,77 +8,82 @@ from fastapi.testclient import TestClient
 from pathlib import Path
 import tempfile
 import joblib
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
+
+from src.data_pipeline import DataPipeline
 
 
 # Create a mock model for testing
-def create_mock_model():
-    """Create a realistic mock pipeline that handles both encoding and scaling."""
-    from sklearn.preprocessing import OneHotEncoder
-    from sklearn.compose import ColumnTransformer
+def create_mock_model(temp_dir):
+    """Create a mock production-style model and preprocessing artifacts."""
     import pandas as pd
 
-    # Create sample training data (realistic features)
-    X_mock = pd.DataFrame({
-        # Numeric
-        'tenure': [10, 20, 30],
-        'monthly_charges': [50.0, 60.0, 70.0],
-        'total_charges': [500.0, 1200.0, 2100.0],
-        # Categorical (will be one-hot encoded)
-        'contract': ['Month-to-month', 'One year', 'Two year'],
-        'internet_service': ['DSL', 'Fiber optic', 'DSL'],
-        'gender': ['Male', 'Female', 'Male'],
-        'partner': ['Yes', 'No', 'Yes'],
+    raw_df = pd.DataFrame({
+        "customerID": ["001", "002", "003", "004", "005", "006"],
+        "tenure": [10, 20, 30, 40, 50, 60],
+        "MonthlyCharges": [50.0, 60.0, 70.0, 80.0, 90.0, 100.0],
+        "TotalCharges": [500.0, 1200.0, 2100.0, 3200.0, 4500.0, 6000.0],
+        "gender": ["Male", "Female", "Male", "Female", "Male", "Female"],
+        "SeniorCitizen": [0, 1, 0, 0, 1, 0],
+        "Partner": ["Yes", "No", "Yes", "No", "Yes", "No"],
+        "Dependents": ["No", "Yes", "No", "Yes", "No", "Yes"],
+        "PhoneService": ["Yes", "Yes", "No", "Yes", "No", "Yes"],
+        "MultipleLines": ["No", "Yes", "No phone service", "Yes", "No", "Yes"],
+        "InternetService": ["DSL", "Fiber optic", "No", "DSL", "Fiber optic", "No"],
+        "OnlineSecurity": ["Yes", "No", "No internet service", "Yes", "No", "No internet service"],
+        "OnlineBackup": ["No", "Yes", "No internet service", "No", "Yes", "No internet service"],
+        "DeviceProtection": ["Yes", "No", "No internet service", "Yes", "No", "No internet service"],
+        "TechSupport": ["No", "Yes", "No internet service", "No", "Yes", "No internet service"],
+        "StreamingTV": ["No", "Yes", "No internet service", "Yes", "No", "No internet service"],
+        "StreamingMovies": ["Yes", "No", "No internet service", "Yes", "No", "No internet service"],
+        "Contract": ["Month-to-month", "One year", "Two year", "Month-to-month", "One year", "Two year"],
+        "PaperlessBilling": ["Yes", "No", "Yes", "No", "Yes", "No"],
+        "PaymentMethod": ["Electronic check", "Mailed check", "Bank transfer", "Credit card", "Electronic check", "Mailed check"],
+        "Churn": ["No", "Yes", "No", "Yes", "No", "Yes"]
     })
 
-    y_mock = [0, 1, 0]
+    raw_path = Path(temp_dir) / "raw_data.csv"
+    raw_df.to_csv(raw_path, index=False)
 
-    # Create preprocessing pipeline
-    numeric_features = ['tenure', 'monthly_charges', 'total_charges']
-    categorical_features = ['contract', 'internet_service', 'gender', 'partner']
+    pipeline = DataPipeline()
+    X_train, X_test, y_train, y_test = pipeline.process(raw_path, save=False)
 
-    preprocessor = ColumnTransformer([
-        ('num', StandardScaler(), numeric_features),
-        ('cat', OneHotEncoder(sparse_output=False, handle_unknown='ignore'), categorical_features)
-    ])
+    model = LogisticRegression(random_state=42, max_iter=1000)
+    model.fit(X_train, y_train)
 
-    # Create full pipeline with preprocessing + model
-    pipeline = Pipeline([
-        ("preprocessor", preprocessor),
-        ("model", LogisticRegression(random_state=42, max_iter=1000))
-    ])
+    artifacts_path = Path(temp_dir) / "pipeline_artifacts.pkl"
+    pipeline.save_pipeline(artifacts_path)
 
-    pipeline.fit(X_mock, y_mock)
-
-    return pipeline
+    return model, artifacts_path
 
 
 @pytest.fixture
 def mock_model_path():
-    """Create a temporary model file for testing."""
-    with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
-        model = create_mock_model()
-        joblib.dump(model, f.name)
-        temp_path = f.name
-    yield temp_path
-    # Cleanup
-    Path(temp_path).unlink()
+    """Create temporary model and pipeline artifacts for testing."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model, artifacts_path = create_mock_model(tmpdir)
+        model_path = Path(tmpdir) / "production_model.pkl"
+        joblib.dump(model, model_path)
+        yield str(model_path), artifacts_path
 
 
 @pytest.fixture
-def client(mock_model_path, monkeypatch):
-    """Create test client with mocked model path."""
-    # Patch the model path
-    monkeypatch.setenv("MODEL_PATH", mock_model_path)
+def client(mock_model_path):
+    """Create test client with mocked model path and preprocessing artifacts."""
+    model_path, artifacts_path = mock_model_path
 
-    from src.api import app, ml_pipeline
+    from src import api
 
-    # Load the mock model
-    ml_pipeline.load(mock_model_path)
+    api.MODEL_ARTIFACT_PATH = Path(model_path)
 
-    return TestClient(app)
+    pipeline = DataPipeline()
+    pipeline.load_pipeline(artifacts_path)
+    pipeline.load_pipeline = lambda filepath=None: None
+    api.data_pipeline = pipeline
+
+    api.ml_pipeline.load(model_path)
+
+    return TestClient(api.app)
 
 
 class TestHealthEndpoint:
