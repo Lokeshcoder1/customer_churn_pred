@@ -9,11 +9,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN chmod +x start.sh
 
-EXPOSE 8000
+# Ensure both scripts are executable (just in case)
+RUN chmod +x start.sh streamlit_start.sh
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
-    CMD curl -f http://localhost:8000/health || exit 1
+# Expose the port Streamlit will use
+EXPOSE 8501
 
-CMD ["./start.sh"]
+# Run the Streamlit start script
+CMD ["./streamlit_start.sh"]
