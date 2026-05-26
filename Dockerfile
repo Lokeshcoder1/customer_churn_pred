@@ -23,4 +23,4 @@ EXPOSE 8501
 HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
 
 # Run both FastAPI (internal, port 8000) and Streamlit (external, port 8501).
-CMD sh -c "uvicorn src.api:app --host 0.0.0.0 --port 8000 & streamlit run streamlit/app.py --server.port 8501 --server.address 0.0.0.0"
+CMD sh -c "uvicorn src.api:app --host 0.0.0.0 --port 8000 & exec streamlit run streamlit/app.py --server.port ${PORT:-8501} --server.address 0.0.0.0"
