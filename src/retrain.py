@@ -386,11 +386,20 @@ def run_retraining() -> Dict:
         finally:
             if temp_file_path.exists():
                 temp_file_path.unlink()
+
+        comparator = ModelComparison(cv_folds=CV_FOLDS)
+        baseline_scores = comparator.quick_baseline(X_train, y_train, X_test, y_test)
+        tuned_results = comparator.tune_top_models(X_train, y_train, X_test, y_test, top_k=2)
+
+        if not tuned_results:
+            raise RuntimeError("No tuned models were generated during retraining.")
+
+        best_model_name = max(tuned_results.items(), key=lambda x: x[1]["test_auc"])[0]
         best_model = tuned_results[best_model_name]["model"]
         best_auc = tuned_results[best_model_name]["test_auc"]
-        
+
         logger.info(f"New model trained: {best_model_name}, AUC={best_auc:.4f}")
-        
+
         results["model_name"] = best_model_name
         results["metrics"] = {
             "auc": best_auc,
