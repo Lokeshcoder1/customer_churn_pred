@@ -24,25 +24,30 @@ echo "Starting FastAPI on port 8000..."\n\
 uvicorn src.api:app --host 0.0.0.0 --port 8000 &> /tmp/uvicorn.log &\n\
 API_PID=$!\n\
 \n\
-sleep 3\n\
+sleep 5\n\
 \n\
 echo "--- FastAPI startup log ---"\n\
 cat /tmp/uvicorn.log\n\
 echo "----------------------------"\n\
 \n\
-if kill -0 $API_PID 2>/dev/null; then\n\
-    echo "✅ FastAPI is running (PID: $API_PID)"\n\
-else\n\
-    echo "❌ FastAPI failed to start. Check the log above."\n\
+# Now test if the API is actually responding\n\
+echo "Testing API health endpoint..."\n\
+for i in 1 2 3 4 5; do\n\
+    if curl -s --fail http://localhost:8000/health > /dev/null 2>&1; then\n\
+        echo "✅ API health check passed"\n\
+        break\n\
+    fi\n\
+    echo "Attempt $i: API not ready yet, waiting..."\n\
+    sleep 2\n\
+done\n\
+\n\
+if ! curl -s --fail http://localhost:8000/health > /dev/null 2>&1; then\n\
+    echo "❌ API health check FAILED. Streamlit will likely show 'API not running'."\n\
+    echo "Last 20 lines of uvicorn log:"\n\
+    tail -20 /tmp/uvicorn.log\n\
     exit 1\n\
 fi\n\
 \n\
 echo "Starting Streamlit on port ${PORT:-8501}..."\n\
 streamlit run streamlit/app.py --server.port ${PORT:-8501} --server.address 0.0.0.0\n\
 ' > start.sh && chmod +x start.sh
-
-# Set PYTHONPATH to ensure src module is found
-ENV PYTHONPATH=/app
-
-# Run the start script
-CMD ./start.sh
