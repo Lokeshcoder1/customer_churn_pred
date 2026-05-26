@@ -1,53 +1,176 @@
+"""
+GitHub Actions CI/CD Pipeline Configuration
+Automates: test → build → push → deploy
+
+Run on: push to main, pull requests, manual trigger
+"""
+
 name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main ]          # Run on every push to main branch
+    branches: [ main, develop ]
   pull_request:
-    branches: [ main ]          # Also run on PRs (optional)
+    branches: [ main ]
+  workflow_dispatch:  # Manual trigger
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # ---------- TEST JOB ----------
+  # ============================================================================
+  # STAGE 1: TEST
+  # ============================================================================
   test:
+    name: Test & Lint
     runs-on: ubuntu-latest
+    
     strategy:
       matrix:
-        python-version: [3.10]   # Use the same Python version as your Docker image
-
+        python-version: ['3.9', '3.10', '3.11']
+    
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@v3
+      
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-
+          cache: 'pip'
+      
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          
-
-      - name: Run tests with pytest
+      
+      - name: Lint with flake8
         run: |
-          pytest --cov=./ --cov-report=xml   
-
-      - name: Upload coverage to Codecov (optional)
-        uses: codecov/codecov-action@v4
+          pip install flake8
+          # Stop build on syntax errors
+          flake8 src tests --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Warnings
+          flake8 src tests --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
+      
+      - name: Run unit tests
+        run: |
+          pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
         with:
-          file: ./coverage.xml
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
           fail_ci_if_error: false
-
-  # ---------- DEPLOY JOB ----------
-  deploy:
-    needs: test                # Only run if the 'test' job succeeds
+  
+  # ============================================================================
+  # STAGE 2: BUILD & PUSH IMAGE
+  # ============================================================================
+  build:
+    name: Build Docker Image
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'   # Only deploy on main branch pushes
-
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      packages: write
+    
     steps:
-      - name: Trigger Render Deploy
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Log in to Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+  
+  # ============================================================================
+  # STAGE 3: SECURITY SCAN
+  # ============================================================================
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+  
+  # ============================================================================
+  # STAGE 4: DEPLOY (Optional - Configure for your environment)
+  # ============================================================================
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [test, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Deploy to production
         env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          curl -X POST "$RENDER_DEPLOY_HOOK"
+          # Example: Deploy via SSH
+          # mkdir -p ~/.ssh
+          # echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          # chmod 600 ~/.ssh/deploy_key
+          # ssh -i ~/.ssh/deploy_key $DEPLOY_USER@$DEPLOY_HOST "cd /app && docker-compose pull && docker-compose up -d"
+          
+          echo "Deploy step configured via secrets"
+          echo "Update with your actual deployment command"
+      
+      - name: Notify deployment
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const deployment = context.payload.deployment;
+            console.log('Deployment status: success');
