@@ -13,4 +13,4 @@ RUN pip install prometheus-client
 COPY . .
 
 # Streamlit will listen on Render's assigned PORT
-CMD streamlit run streamlit/app.py --server.port ${PORT:-8501} --server.address 0.0.0.0
+CMD sh -c "uvicorn src.api:app --host 0.0.0.0 --port 8000 & streamlit run streamlit/app.py --server.port ${PORT:-8501} --server.address 0.0.0.0"
