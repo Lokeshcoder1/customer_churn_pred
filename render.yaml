@@ -1,0 +1,52 @@
+services:
+  # ============================================
+  # API Service
+  # ============================================
+  - type: web
+    name: churn-api
+    env: python
+    plan: free
+    
+    buildCommand: pip install -r requirements.txt
+    startCommand: ./start.sh
+    
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.10"
+      - key: PORT
+        value: "8000"
+    
+    routes:
+      - path: /
+        destination: /
+      - path: /health
+        destination: /health
+      - path: /predict
+        destination: /predict
+      - path: /predict-batch
+        destination: /predict-batch
+      - path: /docs
+        destination: /docs
+
+  # ============================================
+  # Streamlit Dashboard Service
+  # ============================================
+  - type: web
+    name: churn-dashboard
+    env: python
+    plan: free
+    
+    buildCommand: pip install -r requirements.txt
+    startCommand: ./streamlit_start.sh
+    
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.10"
+      - key: PORT
+        value: "8501"
+      - key: API_URL
+        value: "https://customer-churn-prediction-n450.onrender.com"
+    
+    routes:
+      - path: /
+        destination: /
