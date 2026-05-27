@@ -4,7 +4,7 @@ services:
     name: customer-churn-api
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: cd src && gunicorn api:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+    startCommand: gunicorn src.api:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
     plan: free
     envVars:
       - key: PYTHON_VERSION
@@ -21,4 +21,4 @@ services:
       - key: PYTHON_VERSION
         value: 3.11
       - key: API_URL
-        value: https://customer-churn-api-xxxx.onrender.com   # ← update this after deployment
+        value: https://customer-churn-api-xxxx.onrender.com   
