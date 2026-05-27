@@ -149,7 +149,7 @@ st.info(f"🔌 Connected to API: {API_URL}")
 # ============================================================================
 # Utility Functions
 # ============================================================================
-@st.cache_data
+@st.cache_data(ttl=30)
 def get_api_health():
     """Check if API is running"""
     try:
