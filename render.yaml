@@ -21,4 +21,4 @@ services:
       - key: PYTHON_VERSION
         value: 3.11
       - key: API_URL
-        value: https://customer-churn-api-xxxx.onrender.com   
+        value:  https://customer-churn-api-5ix4.onrender.com  
