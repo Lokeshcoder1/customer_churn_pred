@@ -1,52 +1,24 @@
 services:
-  # ============================================
-  # API Service
-  # ============================================
+  # ------------------- Backend API -------------------
   - type: web
-    name: churn-api
+    name: customer-churn-api
     env: python
-    plan: free
-    
     buildCommand: pip install -r requirements.txt
-    startCommand: ./start.sh
-    
+    startCommand: cd src && gunicorn api:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+    plan: free
     envVars:
       - key: PYTHON_VERSION
-        value: "3.10"
-      - key: PORT
-        value: "8000"
-    
-    routes:
-      - path: /
-        destination: /
-      - path: /health
-        destination: /health
-      - path: /predict
-        destination: /predict
-      - path: /predict-batch
-        destination: /predict-batch
-      - path: /docs
-        destination: /docs
+        value: 3.11
 
-  # ============================================
-  # Streamlit Dashboard Service
-  # ============================================
+  # ------------------- Frontend Dashboard -------------------
   - type: web
-    name: churn-dashboard
+    name: customer-churn-dashboard
     env: python
-    plan: free
-    
     buildCommand: pip install -r requirements.txt
-    startCommand: ./streamlit_start.sh
-    
+    startCommand: cd streamlit && streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+    plan: free
     envVars:
       - key: PYTHON_VERSION
-        value: "3.10"
-      - key: PORT
-        value: "8501"
+        value: 3.11
       - key: API_URL
-        value: "https://churn-api.onrender.com" # set to your API service URL (replace if different)
-    
-    routes:
-      - path: /
-        destination: /
+        value: https://customer-churn-api-xxxx.onrender.com   # ← update this after deployment
