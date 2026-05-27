@@ -9,6 +9,7 @@ import requests
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime
+import os
 
 # ============================================================================
 # Page Configuration
@@ -141,9 +142,9 @@ st.markdown("""
 # ============================================================================
 # Configuration
 # ============================================================================
-API_URL = "http://localhost:8000"
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 CHURN_THRESHOLD = 0.5
-
+st.info(f"🔌 Connected to API: {API_URL}")
 
 # ============================================================================
 # Utility Functions

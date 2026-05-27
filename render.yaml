@@ -45,7 +45,7 @@ services:
       - key: PORT
         value: "8501"
       - key: API_URL
-        value: "https://customer-churn-prediction-n450.onrender.com"
+        value: "https://churn-api.onrender.com" # set to your API service URL (replace if different)
     
     routes:
       - path: /
